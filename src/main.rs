@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use diesel::prelude::*;
 use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -52,11 +53,23 @@ async fn data() -> Json<Value> {
     Json(json!({ "data": 42 }))
 }
 
-async fn get_city(Path(city_id): Path<String>) -> Json<Value> {
-    Json(json!({
-        "id": city_id,
-        "name": format!("City #{}", city_id)
-    }))
+async fn get_city(Path(city_id): Path<i32>) -> Result<Json<Value>, StatusCode> {
+    let conn = &mut establish_connection();
+
+    use schema::cities::dsl::*;
+
+    let result = cities.filter(id.eq(city_id)).first::<models::City>(conn);
+
+    match result {
+        Ok(city) => Ok(Json(json!({
+            "id": city.id,
+            "name": city.name
+        }))),
+        Err(error) => {
+            eprintln!("Error: {error}");
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
 }
 
 async fn create_city(Json(payload): Json<CreateCityPayload>) -> Result<Json<Value>, StatusCode> {

@@ -4,20 +4,28 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::sync::atomic::{AtomicU64, Ordering};
+
+use crate::db::establish_connection;
+
+pub mod db;
+pub mod models;
+pub mod schema;
 
 #[derive(Deserialize)]
 struct CreateCityPayload {
     city_name: String,
 }
 
-static AUTO_INC: AtomicU64 = AtomicU64::new(1);
+// static AUTO_INC: AtomicU64 = AtomicU64::new(1);
 
 #[tokio::main]
 async fn main() {
     println!("Starting Server");
+
+    // let conn = establish_connection();
 
     // build our application with a single route
     let app = Router::new()
@@ -55,13 +63,23 @@ async fn create_city(Json(payload): Json<CreateCityPayload>) -> Result<Json<Valu
     if payload.city_name.len() > 8 {
         Err(StatusCode::BAD_REQUEST)
     } else {
-        // https://doc.rust-lang.org/beta/std/sync/atomic/enum.Ordering.html
-        let id = AUTO_INC.fetch_add(1, Ordering::SeqCst);
-        println!("Creating City #{}", id);
+        let conn = &mut establish_connection();
 
-        Ok(Json(json!({
-            "id": id,
-            "name": format!("City #{}", id)
-        })))
+        use schema::cities::dsl::*;
+
+        let inserted = insert_into(cities)
+            .values(name.eq(payload.city_name))
+            .returning(id)
+            .get_result::<i32>(conn);
+
+        match inserted {
+            Ok(inserted_id) => Ok(Json(json!({
+                "id": inserted_id
+            }))),
+            Err(error) => {
+                eprintln!("Error: {error}");
+                Err(StatusCode::BAD_REQUEST)
+            }
+        }
     }
 }
